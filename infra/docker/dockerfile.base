@@ -1,0 +1,44 @@
+# Build the Go Binary.
+FROM golang:1.23.5 AS build_base
+ENV CGO_ENABLED=0
+ARG BUILD_REF
+ARG APP_NAME
+
+COPY . /source_code
+COPY go.* /source_code/
+
+
+# Build the admin binary.
+WORKDIR /source_code/apps/tooling/admin
+RUN go build -ldflags "-X main.build=${BUILD_REF}"
+
+# Build the app binary.
+WORKDIR /source_code/apps/services/${APP_NAME}
+RUN go build -ldflags "-X main.build=${BUILD_REF}"
+
+
+# Run the Go Binary in Alpine.
+FROM alpine:3.21
+ARG BUILD_DATE
+ARG BUILD_REF
+ARG APP_NAME
+ARG AUTHOR_NAME
+ARG AUTHOR_EMAIL
+ARG VENDOR_NAME
+ARG IMAGE_SOURCE
+
+RUN addgroup -g 1000 -S ${APP_NAME} || true && \
+    adduser -u 1000 -h /service -G ${APP_NAME} -S ${APP_NAME} || true
+
+COPY --from=build_base --chown=${APP_NAME}:${APP_NAME} /source_code/apps/tooling/admin/admin /service/admin
+COPY --from=build_base --chown=${APP_NAME}:${APP_NAME} /source_code/apps/services/${APP_NAME}/${APP_NAME} /service/${APP_NAME}
+WORKDIR /service
+USER ${APP_NAME}
+CMD ["./${APP_NAME}"]
+
+LABEL org.opencontainers.image.created="${BUILD_DATE}" \
+    org.opencontainers.image.title="${APP_NAME}" \
+    org.opencontainers.image.authors="${AUTHOR_NAME} <${AUTHOR_EMAIL}>" \
+    org.opencontainers.image.source="${IMAGE_SOURCE}}" \
+    org.opencontainers.image.revision="${BUILD_REF}" \
+    org.opencontainers.image.vendor="${VENDOR_NAME}"
